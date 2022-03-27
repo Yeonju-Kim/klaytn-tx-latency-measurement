@@ -87,7 +87,7 @@ async function checkBalance(addr) {
     const balanceInKLAY = caver.utils.convertFromPeb(balance, 'KLAY')
 
     if(balanceInKLAY < process.env.BALANCE_ALERT_CONDITION_IN_KLAY) {
-        sendSlackMsg(`Current balance of <${process.env.SCOPE_URL}/account/${addr}|${addr}> is less than ${process.env.BALANCE_ALERT_CONDITION_IN_KLAY} KLAY!`)
+        sendSlackMsg(`Current balance of <${process.env.SCOPE_URL}/account/${addr}|${addr}> is less than ${process.env.BALANCE_ALERT_CONDITION_IN_KLAY} KLAY! balance=${balanceInKLAY}`)
     }
 
 }
