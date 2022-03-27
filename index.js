@@ -4,6 +4,7 @@ const axios = require('axios')
 const path = require('path')
 var parquet = require('parquetjs-lite');
 const AWS = require('aws-sdk');
+const moment = require('moment');
 
 const sleep = (ms) => {
     return new Promise(resolve=>{
@@ -43,7 +44,7 @@ async function makeParquetFile(data) {
 
     var d = new Date()
     //20220101_032921
-    var datestring = `${d.getFullYear()}${d.getMonth()+1}${d.getDate()}_${d.getHours()}${d.getMinutes()}${d.getSeconds()}`
+    var datestring = moment().format('YYYYMMDD_HHMMSS')
 
     var filename = `${datestring}.parquet`
 
