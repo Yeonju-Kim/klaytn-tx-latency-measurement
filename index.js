@@ -39,7 +39,7 @@ async function makeParquetFile(data) {
         startTime:{type:'TIMESTAMP_MILLIS'},
         endTime:{type:'TIMESTAMP_MILLIS'},
         chainId:{type:'INT64'},
-        duration:{type:'INT64'}
+        latency:{type:'INT64'}
     })
 
     var d = new Date()
@@ -122,7 +122,7 @@ async function sendTx() {
         txhash: receipt.transactionHash,
         startTime: start,
         endTime: end,
-        duration: end-start
+        latency: end-start
     }
     console.log(`${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.duration}`)
 
