@@ -24,22 +24,20 @@ async function uploadToS3(data) {
         'ContentType':'application/octet-stream'
     }
 
-    await s3.upload(param, function(err, data) {
-        if(err) {
-            throw err
-        }
-        console.log('s3 uploaded.', data)
-        fs.unlinkSync(filename)
-    })
+    await s3.upload(param).promise()
+
+    fs.unlinkSync(filename)
 }
 
 async function makeParquetFile(data) {
     var schema = new parquet.ParquetSchema({
+        executedAt:{type:'TIMESTAMP_MILLIS'},
         txhash:{type:'UTF8'},
         startTime:{type:'TIMESTAMP_MILLIS'},
         endTime:{type:'TIMESTAMP_MILLIS'},
         chainId:{type:'INT64'},
-        latency:{type:'INT64'}
+        latency:{type:'INT64'},
+        error:{type:'UTF8'}
     })
 
     var d = new Date()
@@ -93,40 +91,61 @@ async function checkBalance(addr) {
 }
 
 async function sendTx() {
-    const caver = new Caver(process.env.CAVER_URL)
-    const keyring = caver.wallet.keyring.createFromPrivateKey(process.env.PRIVATE_KEY)
-
-    caver.wallet.add(keyring)
-
-    checkBalance(keyring.address)
-
-	// Create value transfer transaction
-	const vt = caver.transaction.valueTransfer.create({
-		from: keyring.address,
-		to: keyring.address,
-		value: 0,
-		gas: 25000,
-	})
-
-	// Sign to the transaction
-	const signed = await caver.wallet.sign(keyring.address, vt)
-
-    const start = new Date().getTime()
-	// Send transaction to the Klaytn blockchain platform (Klaytn)
-	const receipt = await caver.rpc.klay.sendRawTransaction(signed)
-    const end = new Date().getTime()
-    const chainId = caver.utils.hexToNumber(signed.chainId)
-
-    const data = {
-        chainId: chainId,
-        txhash: receipt.transactionHash,
-        startTime: start,
-        endTime: end,
-        latency: end-start
+    var data = {
+        executedAt: new Date().getTime(),
+        txhash: '',
+        startTime: 0,
+        endTime: 0,
+        chainId: 0,
+        latency:0,
+        error:'',
     }
-    console.log(`${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.duration}`)
 
-    uploadToS3(data)
+    try {
+        const caver = new Caver(process.env.CAVER_URL)
+        const keyring = caver.wallet.keyring.createFromPrivateKey(process.env.PRIVATE_KEY)
+
+        caver.wallet.add(keyring)
+
+        checkBalance(keyring.address)
+
+        // Create value transfer transaction
+        const vt = caver.transaction.valueTransfer.create({
+            from: keyring.address,
+            to: keyring.address,
+            value: 0,
+            gas: 25000,
+        })
+
+        // Sign to the transaction
+        const signed = await caver.wallet.sign(keyring.address, vt)
+        const chainId = caver.utils.hexToNumber(signed.chainId)
+
+        data.chainId = chainId
+
+        const start = new Date().getTime()
+        data.startTime = start
+
+        // Send transaction to the Klaytn blockchain platform (Klaytn)
+        const receipt = await caver.rpc.klay.sendRawTransaction(signed)
+        const end = new Date().getTime()
+
+        data.txhash = receipt.transactionHash
+        data.endTime = end
+        data.latency = end-start
+
+        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.error}`)
+
+    } catch (err) {
+        console.log("failed to execute.", err.toString())
+        data.error = err.toString()
+        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.error}`)
+    }
+    try {
+        await uploadToS3(data)
+    } catch(err) {
+        console.log('failed to s3.upload', err.toString())
+    }
 }
 
 async function main() {
@@ -137,7 +156,7 @@ async function main() {
     sendTx()
 
     // run sendTx every 1 min.
-    const interval = 60*1000
+    const interval = eval(process.env.SEND_TX_INTERVAL)
     setInterval(()=>{
         sendTx()
     }, interval)
