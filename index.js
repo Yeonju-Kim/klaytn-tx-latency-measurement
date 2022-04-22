@@ -5,12 +5,8 @@ const path = require('path')
 var parquet = require('parquetjs-lite');
 const AWS = require('aws-sdk');
 const moment = require('moment');
-
-const sleep = (ms) => {
-    return new Promise(resolve=>{
-        setTimeout(resolve,ms)
-    })
-}
+const CoinGecko = require('coingecko-api');
+const CoinGeckoClient = new CoinGecko(); 
 
 async function uploadToS3(data) {
     const s3 = new AWS.S3();
@@ -37,12 +33,14 @@ async function makeParquetFile(data) {
         endTime:{type:'TIMESTAMP_MILLIS'},
         chainId:{type:'INT64'},
         latency:{type:'INT64'},
+        txFee:{type:'DOUBLE'},
+        txFeeInUSD:{type:'DOUBLE'},
         error:{type:'UTF8'}
     })
 
     var d = new Date()
     //20220101_032921
-    var datestring = moment().format('YYYYMMDD_HHMMSS')
+    var datestring = moment().format('YYYYMMDD_HHmmss')
 
     var filename = `${datestring}.parquet`
 
@@ -98,6 +96,8 @@ async function sendTx() {
         endTime: 0,
         chainId: 0,
         latency:0,
+        txFee: 0.0, 
+        txFeeInUSD: 0.0, 
         error:'',
     }
 
@@ -133,13 +133,23 @@ async function sendTx() {
         data.txhash = receipt.transactionHash
         data.endTime = end
         data.latency = end-start
-
-        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.error}`)
+        
+        var KLAYtoUSD;
+        await CoinGeckoClient.simple.price({
+            ids: ['klay-token'], 
+            vs_currencies:['usd']
+        }).then((response)=> {
+            KLAYtoUSD = response.data['klay-token']['usd']
+        })
+        data.txFee = caver.utils.convertFromPeb(receipt.gasPrice, 'KLAY') * receipt.gasUsed
+        data.txFeeInUSD = KLAYtoUSD * data.txFee
+    
+        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.txFee},${data.txFeeInUSD},${data.error}`)
 
     } catch (err) {
         console.log("failed to execute.", err.toString())
         data.error = err.toString()
-        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.error}`)
+        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.txFee},${data.txFeeInUSD},${data.error}`)
     }
     try {
         await uploadToS3(data)
@@ -152,18 +162,12 @@ async function main() {
     const start = new Date().getTime()
     console.log(`starting tx latency measurement... start time = ${start}`)
 
-    // first send.
-    sendTx()
-
     // run sendTx every 1 min.
     const interval = eval(process.env.SEND_TX_INTERVAL)
     setInterval(()=>{
         sendTx()
     }, interval)
 
-    while(1) {
-        await sleep(60*1000)
-    }
 }
 loadConfig()
 main()
