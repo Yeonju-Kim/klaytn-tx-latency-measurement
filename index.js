@@ -33,16 +33,17 @@ async function makeParquetFile(data) {
         endTime:{type:'TIMESTAMP_MILLIS'},
         chainId:{type:'INT64'},
         latency:{type:'INT64'},
+        error:{type:'UTF8'},
         txFee:{type:'DOUBLE'},
-        txFeeInUSD:{type:'DOUBLE'},
-        error:{type:'UTF8'}
+        txFeeInUSD:{type:'DOUBLE'}
     })
 
     var d = new Date()
     //20220101_032921
     var datestring = moment().format('YYYYMMDD_HHmmss')
 
-    var filename = `${datestring}.parquet`
+    var filename = `${datestring}_${data.chainId}.parquet`
+    console.log(filename)
 
     // create new ParquetWriter that writes to 'fruits.parquet`
     var writer = await parquet.ParquetWriter.openFile(schema, filename);
