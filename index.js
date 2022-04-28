@@ -8,7 +8,6 @@ const moment = require('moment');
 const CoinGecko = require('coingecko-api');
 const XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 const CoinGeckoClient = new CoinGecko(); 
-var pingTime = 0;
 
 async function uploadToS3(data) {
     const s3 = new AWS.S3();
@@ -48,7 +47,6 @@ async function makeParquetFile(data) {
     var datestring = moment().format('YYYYMMDD_HHmmss')
 
     var filename = `${datestring}_${data.chainId}.parquet`
-    console.log(filename)
 
     // create new ParquetWriter that writes to 'fruits.parquet`
     var writer = await parquet.ParquetWriter.openFile(schema, filename);
