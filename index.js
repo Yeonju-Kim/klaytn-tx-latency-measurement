@@ -161,7 +161,6 @@ async function sendTx() {
         const blockInfo = await caver.klay.getBlock('latest')
         data.latestBlockSize = caver.utils.hexToNumber(blockInfo.gasUsed)
         data.numOfTxInLatestBlock = blockInfo.transactions.length
-        console.log(data.latestBlockSize, data.numOfTxInLatestBlock)
         
         data.chainId = chainId
 
