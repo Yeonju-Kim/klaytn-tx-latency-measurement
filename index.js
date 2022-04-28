@@ -6,7 +6,9 @@ var parquet = require('parquetjs-lite');
 const AWS = require('aws-sdk');
 const moment = require('moment');
 const CoinGecko = require('coingecko-api');
+const XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 const CoinGeckoClient = new CoinGecko(); 
+var pingTime = 0;
 
 async function uploadToS3(data) {
     const s3 = new AWS.S3();
@@ -35,7 +37,10 @@ async function makeParquetFile(data) {
         latency:{type:'INT64'},
         error:{type:'UTF8'},
         txFee:{type:'DOUBLE'},
-        txFeeInUSD:{type:'DOUBLE'}
+        txFeeInUSD:{type:'DOUBLE'},
+        latestBlockSize:{type:'INT64'},
+        numOfTxInLatestBlock:{type:'INT64'},
+        pingTime:{type:'INT64'}
     })
 
     var d = new Date()
@@ -53,6 +58,33 @@ async function makeParquetFile(data) {
     writer.close()
 
     return filename;
+}
+
+async function ping(data) {
+    var started = new Date().getTime();
+    var http = new XMLHttpRequest();
+    http.open("GET", process.env.CAVER_URL, /*async*/true);
+    http.onreadystatechange = async ()=>{
+        if (http.readyState == http.DONE) {
+            var ended = new Date().getTime();
+            data.pingTime = ended - started;
+            try {
+                // measure ping time. then upload to s3 bucket 
+                await uploadToS3(data);
+            }
+            catch(err){
+                console.log('failed to s3.upload', err.toString())
+            }
+        }
+    };
+
+    try {
+        http.send(null);
+    } catch(err) {
+        console.log("failed to execute.", err.toString())
+        data.error = err.toString()
+        await uploadToS3(data);
+    }
 }
 
 function loadConfig() {
@@ -97,9 +129,12 @@ async function sendTx() {
         endTime: 0,
         chainId: 0,
         latency:0,
+        error:'',
         txFee: 0.0, 
         txFeeInUSD: 0.0, 
-        error:'',
+        latestBlockSize: 0,
+        numOfTxInLatestBlock: 0,
+        pingTime:0 
     }
 
     try {
@@ -122,6 +157,12 @@ async function sendTx() {
         const signed = await caver.wallet.sign(keyring.address, vt)
         const chainId = caver.utils.hexToNumber(signed.chainId)
 
+        // Get latest block info 
+        const blockInfo = await caver.klay.getBlock('latest')
+        data.latestBlockSize = caver.utils.hexToNumber(blockInfo.gasUsed)
+        data.numOfTxInLatestBlock = blockInfo.transactions.length
+        console.log(data.latestBlockSize, data.numOfTxInLatestBlock)
+        
         data.chainId = chainId
 
         const start = new Date().getTime()
@@ -144,19 +185,13 @@ async function sendTx() {
         })
         data.txFee = caver.utils.convertFromPeb(receipt.gasPrice, 'KLAY') * receipt.gasUsed
         data.txFeeInUSD = KLAYtoUSD * data.txFee
-    
-        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.txFee},${data.txFeeInUSD},${data.error}`)
-
+        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.txFee},${data.txFeeInUSD},${data.latestBlockSize},${data.numOfTxInLatestBlock},${data.error}`)
     } catch (err) {
         console.log("failed to execute.", err.toString())
         data.error = err.toString()
-        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.txFee},${data.txFeeInUSD},${data.error}`)
+        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.txFee},${data.txFeeInUSD},${data.latestBlockSize},${data.numOfTxInLatestBlock},${data.error}`)
     }
-    try {
-        await uploadToS3(data)
-    } catch(err) {
-        console.log('failed to s3.upload', err.toString())
-    }
+    await ping(data)
 }
 
 async function main() {
