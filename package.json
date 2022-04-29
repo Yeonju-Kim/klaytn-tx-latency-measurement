@@ -15,7 +15,6 @@
     "coingecko-api": "^1.0.10",
     "dotenv": "^16.0.0",
     "moment": "^2.29.1",
-    "parquetjs-lite": "^0.8.7",
-    "xmlhttprequest": "^1.8.0"
+    "parquetjs-lite": "^0.8.7"
   }
 }

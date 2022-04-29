@@ -6,7 +6,6 @@ var parquet = require('parquetjs-lite');
 const AWS = require('aws-sdk');
 const moment = require('moment');
 const CoinGecko = require('coingecko-api');
-const XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 const CoinGeckoClient = new CoinGecko(); 
 
 async function uploadToS3(data) {
@@ -37,7 +36,7 @@ async function makeParquetFile(data) {
         error:{type:'UTF8'},
         txFee:{type:'DOUBLE'},
         txFeeInUSD:{type:'DOUBLE'},
-        latestBlockSize:{type:'INT64'},
+        resourceUsedOfLatestBlock:{type:'INT64'},
         numOfTxInLatestBlock:{type:'INT64'},
         pingTime:{type:'INT64'}
     })
@@ -56,33 +55,6 @@ async function makeParquetFile(data) {
     writer.close()
 
     return filename;
-}
-
-async function ping(data) {
-    var started = new Date().getTime();
-    var http = new XMLHttpRequest();
-    http.open("GET", process.env.CAVER_URL, /*async*/true);
-    http.onreadystatechange = async ()=>{
-        if (http.readyState == http.DONE) {
-            var ended = new Date().getTime();
-            data.pingTime = ended - started;
-            try {
-                // measure ping time. then upload to s3 bucket 
-                await uploadToS3(data);
-            }
-            catch(err){
-                console.log('failed to s3.upload', err.toString())
-            }
-        }
-    };
-
-    try {
-        http.send(null);
-    } catch(err) {
-        console.log("failed to execute.", err.toString())
-        data.error = err.toString()
-        await uploadToS3(data);
-    }
 }
 
 function loadConfig() {
@@ -130,7 +102,7 @@ async function sendTx() {
         error:'',
         txFee: 0.0, 
         txFeeInUSD: 0.0, 
-        latestBlockSize: 0,
+        resourceUsedOfLatestBlock: 0,
         numOfTxInLatestBlock: 0,
         pingTime:0 
     }
@@ -154,13 +126,18 @@ async function sendTx() {
         // Sign to the transaction
         const signed = await caver.wallet.sign(keyring.address, vt)
         const chainId = caver.utils.hexToNumber(signed.chainId)
+        data.chainId = chainId
+
+        // Measure latency of getBlock 
+        const startGetBlockNumber = new Date().getTime()
+        const latestBlockNumber = await caver.klay.getBlockNumber()
+        const endGetBlockNumber = new Date().getTime()
+        data.pingTime = endGetBlockNumber - startGetBlockNumber
 
         // Get latest block info 
-        const blockInfo = await caver.klay.getBlock('latest')
-        data.latestBlockSize = caver.utils.hexToNumber(blockInfo.gasUsed)
+        const blockInfo = await caver.klay.getBlock(latestBlockNumber)
+        data.resourceUsedOfLatestBlock = caver.utils.hexToNumber(blockInfo.gasUsed)
         data.numOfTxInLatestBlock = blockInfo.transactions.length
-        
-        data.chainId = chainId
 
         const start = new Date().getTime()
         data.startTime = start
@@ -182,13 +159,17 @@ async function sendTx() {
         })
         data.txFee = caver.utils.convertFromPeb(receipt.gasPrice, 'KLAY') * receipt.gasUsed
         data.txFeeInUSD = KLAYtoUSD * data.txFee
-        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.txFee},${data.txFeeInUSD},${data.latestBlockSize},${data.numOfTxInLatestBlock},${data.error}`)
+        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.txFee},${data.txFeeInUSD},${data.resourceUsedOfLatestBlock},${data.numOfTxInLatestBlock},${data.pingTime},${data.error}`)
     } catch (err) {
         console.log("failed to execute.", err.toString())
         data.error = err.toString()
-        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.txFee},${data.txFeeInUSD},${data.latestBlockSize},${data.numOfTxInLatestBlock},${data.error}`)
+        console.log(`${data.executedAt},${data.chainId},${data.txhash},${data.startTime},${data.endTime},${data.latency},${data.txFee},${data.txFeeInUSD},${data.resourceUsedOfLatestBlock},${data.numOfTxInLatestBlock},${data.pingTime},${data.error}`)
     }
-    await ping(data)
+    try{
+        await uploadToS3(data)
+    } catch(err){
+        console.log('failed to s3.upload', err.toString())
+    }
 }
 
 async function main() {
